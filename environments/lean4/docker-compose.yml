@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  lean4:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USERNAME: lean
+        USER_UID: 1000
+        USER_GID: 1000
+    image: lean4-dev:latest
+    container_name: lean4-container
+    volumes:
+      # プロジェクトディレクトリをマウント
+      - ../../:/workspace:Z
+      # Lean4のキャッシュディレクトリを永続化
+      - lean4-cache:/home/lean/.cache
+      - lean4-elan:/home/lean/.elan
+    working_dir: /workspace
+    tty: true
+    stdin_open: true
+    # ポートマッピング（必要に応じて調整）
+    ports:
+      - "8080:8080"
+    # 環境変数
+    environment:
+      - TERM=xterm-256color
+    # ネットワークモード
+    network_mode: "bridge"
+    # セキュリティオプション
+    security_opt:
+      - "label=disable"
+    # ユーザー設定
+    user: "1000:1000"
+
+volumes:
+  lean4-cache:
+    driver: local
+  lean4-elan:
+    driver: local
+
+networks:
+  default:
+    driver: bridge
