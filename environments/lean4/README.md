@@ -229,9 +229,119 @@ RUN apt-get update && apt-get install -y \
 
 必要に応じて`docker-compose.yml`のネットワーク設定を調整できます。
 
+## PDF生成機能
+
+このコンテナには、Lean4の証明をPDFドキュメントとして出力する機能が含まれています。
+
+### 必要なツール
+
+- **alectryon**: Lean4のドキュメント生成ツール
+- **TeXLive**: LaTeX処理システム（日本語対応）
+- **pandoc**: ドキュメント変換ツール
+
+これらはすべてDockerfileに含まれています。
+
+### PDF生成の使用方法
+
+#### 1. サンプルプロジェクトの使用
+
+```bash
+# サンプルプロジェクトディレクトリに移動
+cd examples/math_proofs
+
+# 依存関係の取得（初回のみ）
+lake exe cache get
+
+# プロジェクトのビルド
+lake build
+
+# PDFを生成
+../../environments/lean4/generate-pdf.sh MathProofs.lean ./output
+```
+
+#### 2. カスタムLean4ファイルからPDF生成
+
+```bash
+# Linux/macOS
+./generate-pdf.sh your_file.lean [output_directory]
+
+# Windows
+generate-pdf.cmd your_file.lean [output_directory]
+```
+
+#### 3. 生成されるファイル
+
+- `filename.html` - HTML版ドキュメント（ブラウザで閲覧可能）
+- `filename.tex` - LaTeX版ドキュメント（編集可能）
+- `filename.pdf` - PDF版ドキュメント（印刷・配布用）
+
+### サンプルプロジェクトの内容
+
+`examples/math_proofs/MathProofs.lean`には以下の証明例が含まれています：
+
+1. **自然数の基本性質**
+   - 加法の単位元
+   - 加法の交換律・結合律
+
+2. **実数の性質**
+   - 加法・乗法の単位元
+   - 分配律
+   - 平方の非負性
+
+3. **不等式の性質**
+   - 三角不等式
+   - 算術・幾何平均の不等式
+
+4. **組み合わせ論的性質**
+   - 鳩の巣原理
+
+5. **数列の性質**
+   - フィボナッチ数列の定義と性質
+
+### PDF生成のカスタマイズ
+
+`generate-pdf.sh`（または`.cmd`）を編集することで、以下をカスタマイズできます：
+
+- LaTeXドキュメントクラス
+- フォントの設定
+- ページレイアウト
+- 色設定
+- 定理環境のスタイル
+
+### トラブルシューティング
+
+#### PDF生成が失敗する場合
+
+1. **alectryonのエラー**:
+   ```bash
+   # alectryonの再インストール
+   pip install --upgrade alectryon[lean4]
+   ```
+
+2. **LaTeXのエラー**:
+   - `filename.log`ファイルを確認
+   - パッケージの不足の場合は`texlive-full`を再インストール
+
+3. **日本語文字化け**:
+   - `texlive-lang-japanese`パッケージが含まれていることを確認
+
+#### メモリ不足の場合
+
+大きなプロジェクトでは、コンテナのメモリ制限を増やしてください：
+
+```yaml
+# docker-compose.ymlに追加
+deploy:
+  resources:
+    limits:
+      memory: 8G
+```
+
 ## 参考リンク
 
 - [Lean4公式ドキュメント](https://lean-lang.org/lean4/doc/)
 - [Podman公式ドキュメント](https://docs.podman.io/)
 - [Lake (Lean Package Manager)](https://github.com/leanprover/lake)
 - [Elan (Lean Toolchain Manager)](https://github.com/leanprover/elan)
+- [Alectryon (ドキュメント生成)](https://github.com/cpitclaudel/alectryon)
+- [Mathlib4 (数学ライブラリ)](https://github.com/leanprover-community/mathlib4)

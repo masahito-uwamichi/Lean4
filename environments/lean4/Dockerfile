@@ -13,11 +13,20 @@ RUN apt-get update && apt-get install -y \
     cmake \
     python3 \
     python3-pip \
+    python3-venv \
     pkg-config \
     libgmp-dev \
     libssl-dev \
     wget \
     unzip \
+    texlive-full \
+    texlive-lang-japanese \
+    texlive-fonts-recommended \
+    texlive-fonts-extra \
+    latexmk \
+    pandoc \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # ユーザーの作成
@@ -44,6 +53,14 @@ RUN lean --version
 
 # Lake (Lean package manager) の確認
 RUN lake --version
+
+# Python仮想環境の作成と必要なパッケージのインストール
+RUN python3 -m venv /home/$USERNAME/.venv
+ENV PATH="/home/$USERNAME/.venv/bin:$PATH"
+
+# Python パッケージのインストール
+RUN pip install --upgrade pip && \
+    pip install pygments
 
 # 作業ディレクトリの設定
 WORKDIR /workspace
