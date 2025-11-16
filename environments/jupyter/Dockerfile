@@ -52,11 +52,9 @@ RUN pip install --upgrade pip && \
                 jupyter \
                 notebook \
                 ipywidgets \
-                matplotlib \
-                plotly \
-                sympy \
-                numpy \
-                pandas
+                ipykernel \
+                pygments \
+                requests
 
 # elanのインストール (Lean toolchain manager) - 改良版
 RUN curl --connect-timeout 30 --max-time 300 --retry 5 --retry-delay 10 \
@@ -84,6 +82,51 @@ RUN chmod +x /home/$USERNAME/.local/share/jupyter/kernels/lean4/lean4_kernel.py
 
 # JupyterLabの拡張機能をインストール
 RUN jupyter labextension install @jupyter-widgets/jupyterlab-manager --no-build || echo "Extension installation failed, continuing..."
+
+# Mathlibプロジェクトのセットアップ (完全版 - Batteriesを含む)
+WORKDIR /home/$USERNAME
+RUN mkdir -p mathlib-project && cd mathlib-project && \
+    lake init mathlib-project
+
+# 正しいlakefile.leanを作成（Batteriesも含む）
+RUN cd mathlib-project && \
+    cat > lakefile.lean << 'EOF'
+import Lake
+open Lake DSL
+
+package «mathlib-project» where
+  -- add package configuration options here
+
+require batteries from git "https://github.com/leanprover-community/batteries" @ "v4.11.0"
+require mathlib from git "https://github.com/leanprover-community/mathlib4.git" @ "v4.11.0"
+
+@[default_target]
+lean_lib «MathLibProject» where
+  -- add library configuration options here
+EOF
+
+# Mathlibとその依存関係をビルド
+RUN cd mathlib-project && \
+    echo "Updating dependencies..." && \
+    timeout 1800 lake update && \
+    echo "Building Mathlib and Batteries (this may take 60+ minutes)..." && \
+    timeout 10800 lake build || echo "Build may have failed or timed out - checking partial build"
+
+# ビルド状況の詳細チェック
+RUN cd mathlib-project && \
+    echo "=== Lake manifest ===" && \
+    cat lake-manifest.json && \
+    echo "=== Package structure ===" && \
+    ls -la .lake/packages/ && \
+    echo "=== Batteries check ===" && \
+    ls -la .lake/packages/batteries/ || echo "Batteries not found" && \
+    echo "=== Mathlib check ===" && \
+    ls -la .lake/packages/mathlib/ || echo "Mathlib not found" && \
+    echo "=== .olean files sample ===" && \
+    find .lake -name "*.olean" | head -20 || echo "No .olean files found"
+
+# LEAN_PATH環境変数の設定 (Batteriesも含む)
+ENV LEAN_PATH="/home/$USERNAME/mathlib-project/.lake/packages/batteries/.lake/build/lib:/home/$USERNAME/mathlib-project/.lake/packages/mathlib/.lake/build/lib:/home/$USERNAME/mathlib-project/.lake/build/lib:$LEAN_PATH"
 
 # 作業ディレクトリの設定
 WORKDIR /workspace

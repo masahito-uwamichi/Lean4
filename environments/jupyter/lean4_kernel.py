@@ -18,7 +18,7 @@ class Lean4Kernel(Kernel):
     implementation = 'Lean4'
     implementation_version = '1.0'
     language = 'lean4'
-    language_version = '4.12.0'
+    language_version = '4.11.0'
     language_info = {
         'name': 'lean4',
         'mimetype': 'text/x-lean',
@@ -32,11 +32,12 @@ class Lean4Kernel(Kernel):
             },
         ],
     }
-    banner = "Lean4 Kernel - A kernel for running Lean4 code in Jupyter"
+    banner = "Lean4 Kernel - A kernel for running Lean4 code in Jupyter with Mathlib support"
 
     def __init__(self, **kwargs):
         Kernel.__init__(self, **kwargs)
         self.lean_executable = self._find_lean_executable()
+        self.mathlib_project_path = self._find_mathlib_project()
 
     def _find_lean_executable(self):
         """Lean実行ファイルを探す"""
@@ -58,6 +59,20 @@ class Lean4Kernel(Kernel):
         except subprocess.CalledProcessError:
             return 'lean'  # フォールバック
 
+    def _find_mathlib_project(self):
+        """Mathlibプロジェクトのパスを探す"""
+        mathlib_paths = [
+            '/home/lean/mathlib-project',
+            '/workspace/mathlib-project',
+            os.path.expanduser('~/mathlib-project')
+        ]
+        
+        for path in mathlib_paths:
+            if os.path.exists(os.path.join(path, 'lakefile.lean')):
+                return path
+        
+        return None
+
     def do_execute(self, code, silent, store_history=True, user_expressions=None, allow_stdin=False):
         """
         Lean4コードを実行する
@@ -67,19 +82,14 @@ class Lean4Kernel(Kernel):
                    'payload': [], 'user_expressions': {}}
 
         try:
-            # 一時的なLean4ファイルを作成
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.lean', delete=False) as f:
-                # 基本的なimportを追加
-                lean_code = self._prepare_lean_code(code)
-                f.write(lean_code)
-                temp_file = f.name
-
-            # Lean4でコードをチェック
-            result = self._run_lean(temp_file)
+            # Mathlibプロジェクト内で実行するかを決定
+            use_mathlib = self._needs_mathlib(code)
             
-            # 一時ファイルを削除
-            os.unlink(temp_file)
-
+            if use_mathlib and self.mathlib_project_path:
+                result = self._run_with_mathlib(code)
+            else:
+                result = self._run_standalone(code)
+            
             if result['status'] == 'ok':
                 self._send_output(result['output'], 'stdout')
             else:
@@ -93,42 +103,75 @@ class Lean4Kernel(Kernel):
             return {'status': 'error', 'execution_count': self.execution_count,
                    'payload': [], 'user_expressions': {}}
 
-    def _prepare_lean_code(self, code):
-        """
-        Lean4コードを実行可能な形式に準備する
-        """
-        # コードが既にimportを含んでいる場合はそのまま使用
-        if 'import ' in code or 'namespace ' in code:
-            return code
-        
-        # 基本的なimportを追加
-        basic_imports = [
-            "import Mathlib.Data.Nat.Basic",
-            "import Mathlib.Data.Real.Basic",
-            "import Mathlib.Tactic",
-            ""
+    def _needs_mathlib(self, code):
+        """コードがMathlibを必要とするかを判定"""
+        mathlib_indicators = [
+            'import Mathlib',
+            'ℝ', 'Real', 
+            'Group', 'Ring', 'Field',
+            'Real.pi', 'Real.exp',
+            'add_comm', 'mul_assoc',
+            '∧', '∨', '¬'  # これらもMathlibで定義されている
         ]
-        
-        # #eval や #check コマンドの場合は、そのまま実行
-        if code.strip().startswith('#'):
-            return '\n'.join(basic_imports) + code
-        
-        # 定理や定義の場合
-        return '\n'.join(basic_imports) + '\n' + code
+        return any(indicator in code for indicator in mathlib_indicators)
 
-    def _run_lean(self, file_path):
-        """
-        Leanファイルを実行し、結果を取得する
-        """
+    def _run_with_mathlib(self, code):
+        """Mathlibプロジェクト内でLeanコードを実行"""
         try:
-            # まずLeanでファイルをチェック
+            # Mathlibプロジェクト内に一時ファイルを作成
+            temp_dir = os.path.join(self.mathlib_project_path, 'temp')
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            temp_file = os.path.join(temp_dir, f'temp_{uuid.uuid4().hex[:8]}.lean')
+            
+            with open(temp_file, 'w') as f:
+                f.write(code)
+
+            # Mathlibプロジェクトディレクトリで実行
             result = subprocess.run(
-                [self.lean_executable, file_path],
+                [self.lean_executable, temp_file],
+                cwd=self.mathlib_project_path,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            
+            # 一時ファイルを削除
+            os.unlink(temp_file)
+            
+            if result.returncode == 0:
+                output = result.stdout if result.stdout else "✓ Code compiled successfully with Mathlib"
+                return {'status': 'ok', 'output': output}
+            else:
+                error_msg = result.stderr if result.stderr else result.stdout
+                return {'status': 'error', 'error': error_msg}
+                
+        except subprocess.TimeoutExpired:
+            return {'status': 'error', 'error': 'Execution timed out (60s limit)'}
+        except Exception as e:
+            return {'status': 'error', 'error': f'Mathlib execution error: {str(e)}'}
+
+    def _run_standalone(self, code):
+        """スタンドアロンでLeanコードを実行"""
+        try:
+            # 一時的なLean4ファイルを作成
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.lean', delete=False) as f:
+                # 基本的なimportを追加（Mathlibなし）
+                lean_code = self._prepare_basic_lean_code(code)
+                f.write(lean_code)
+                temp_file = f.name
+
+            # Lean4でコードをチェック
+            result = subprocess.run(
+                [self.lean_executable, temp_file],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
             
+            # 一時ファイルを削除
+            os.unlink(temp_file)
+
             if result.returncode == 0:
                 output = result.stdout if result.stdout else "✓ Code compiled successfully"
                 return {'status': 'ok', 'output': output}
@@ -142,6 +185,29 @@ class Lean4Kernel(Kernel):
             return {'status': 'error', 'error': f'Lean executable not found: {self.lean_executable}'}
         except Exception as e:
             return {'status': 'error', 'error': f'Execution error: {str(e)}'}
+
+    def _prepare_basic_lean_code(self, code):
+        """
+        基本的なLean4コード（Mathlibなし）を準備する
+        """
+        # コードが既にimportを含んでいる場合はそのまま使用
+        if 'import ' in code or 'namespace ' in code:
+            return code
+        
+        # #eval や #check コマンドや単純な定義の場合は、importなしで実行を試行
+        if code.strip().startswith('#') or 'def ' in code or 'theorem ' in code:
+            return code
+        
+        # その他の場合は基本的なimportを追加
+        basic_imports = [
+            "import Init.Data.Nat.Basic",
+            "import Init.Logic",
+            ""
+        ]
+        
+        return '\n'.join(basic_imports) + '\n' + code
+
+
 
     def _send_output(self, text, stream_name):
         """
