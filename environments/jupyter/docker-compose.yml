@@ -1,0 +1,61 @@
+services:
+  lean4-jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USERNAME: lean
+        USER_UID: 1000
+        USER_GID: 1000
+    image: lean4-jupyter:latest
+    container_name: lean4-jupyter-container
+    ports:
+      # JupyterLab/Notebook用ポート
+      - "8888:8888"
+    volumes:
+      # プロジェクトディレクトリをマウント
+      - ../../:/workspace:Z
+      # Jupyterの設定とノートブックを永続化
+      - jupyter-config:/home/lean/.jupyter
+      - jupyter-notebooks:/home/lean/notebooks
+      # Lean4のキャッシュディレクトリを永続化
+      - lean4-cache:/home/lean/.cache
+      - lean4-elan:/home/lean/.elan
+      # Python環境を永続化
+      - python-env:/home/lean/.venv
+    working_dir: /workspace
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=""
+      - JUPYTER_PASSWORD=""
+      - PYTHONPATH=/home/lean/.local/lib/python3.10/site-packages
+    # ネットワークモード
+    network_mode: "bridge"
+    # セキュリティオプション
+    security_opt:
+      - "label=disable"
+    # ユーザー設定
+    user: "1000:1000"
+    # ヘルスチェック
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/lab", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  jupyter-config:
+    driver: local
+  jupyter-notebooks:
+    driver: local
+  lean4-cache:
+    driver: local
+  lean4-elan:
+    driver: local
+  python-env:
+    driver: local
+
+networks:
+  default:
+    driver: bridge

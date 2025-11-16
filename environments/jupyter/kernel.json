@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "python3",
+    "/home/lean/.local/share/jupyter/kernels/lean4/lean4_kernel.py",
+    "-f",
+    "{connection_file}"
+  ],
+  "display_name": "Lean 4",
+  "language": "lean4",
+  "metadata": {
+    "debugger": false
+  }
+}
