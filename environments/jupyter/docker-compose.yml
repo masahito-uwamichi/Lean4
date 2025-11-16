@@ -2,7 +2,7 @@ services:
   lean4-jupyter:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.minimal
       args:
         USERNAME: lean
         USER_UID: 1000

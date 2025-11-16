@@ -64,13 +64,23 @@ class Lean4Kernel(Kernel):
         mathlib_paths = [
             '/home/lean/mathlib-project',
             '/workspace/mathlib-project',
+            '/home/lean/.local/mathlib-project',
             os.path.expanduser('~/mathlib-project')
         ]
         
         for path in mathlib_paths:
-            if os.path.exists(os.path.join(path, 'lakefile.lean')):
-                return path
+            lakefile_path = os.path.join(path, 'lakefile.lean')
+            manifest_path = os.path.join(path, 'lake-manifest.json')
+            
+            if os.path.exists(lakefile_path):
+                # lake-manifest.jsonの存在も確認（依存関係がセットアップ済み）
+                if os.path.exists(manifest_path):
+                    print(f"Found Mathlib project at: {path}")
+                    return path
+                else:
+                    print(f"Found lakefile.lean but no lake-manifest.json at: {path}")
         
+        print("No Mathlib project found")
         return None
 
     def do_execute(self, code, silent, store_history=True, user_expressions=None, allow_stdin=False):
@@ -107,13 +117,34 @@ class Lean4Kernel(Kernel):
         """コードがMathlibを必要とするかを判定"""
         mathlib_indicators = [
             'import Mathlib',
+            'import Batteries',
+            'import Aesop', 
+            'import Std',
             'ℝ', 'Real', 
             'Group', 'Ring', 'Field',
             'Real.pi', 'Real.exp',
             'add_comm', 'mul_assoc',
-            '∧', '∨', '¬'  # これらもMathlibで定義されている
+            '∧', '∨', '¬',  # これらもMathlibで定義されている
+            'norm_num', 'linarith', 'ring',  # Mathlibのタクティク
+            'simp_all', 'omega'  # Mathlibの高度なタクティク
         ]
-        return any(indicator in code for indicator in mathlib_indicators)
+        
+        # 基本的なLean4のコア機能のみを使うケース
+        basic_only_indicators = [
+            '#eval', '#check', '#print',
+            'def main', 'theorem', 'example'
+        ]
+        
+        # Mathlibが必要かを判定
+        needs_mathlib = any(indicator in code for indicator in mathlib_indicators)
+        
+        # デバッグ用の出力
+        if needs_mathlib:
+            print(f"Code needs Mathlib: {code[:50]}...")
+        else:
+            print(f"Code uses basic Lean4: {code[:50]}...")
+            
+        return needs_mathlib
 
     def _run_with_mathlib(self, code):
         """Mathlibプロジェクト内でLeanコードを実行"""
@@ -127,14 +158,25 @@ class Lean4Kernel(Kernel):
             with open(temp_file, 'w') as f:
                 f.write(code)
 
-            # Mathlibプロジェクトディレクトリで実行
-            result = subprocess.run(
-                [self.lean_executable, temp_file],
-                cwd=self.mathlib_project_path,
-                capture_output=True,
-                text=True,
-                timeout=60
-            )
+            # Lakeを使ってMathlibプロジェクト内で実行（より確実）
+            try:
+                # まずlake使用を試行
+                result = subprocess.run(
+                    ['lake', 'env', 'lean', temp_file],
+                    cwd=self.mathlib_project_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=90
+                )
+            except FileNotFoundError:
+                # lakeが見つからない場合は直接leanを使用
+                result = subprocess.run(
+                    [self.lean_executable, temp_file],
+                    cwd=self.mathlib_project_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=90
+                )
             
             # 一時ファイルを削除
             os.unlink(temp_file)
@@ -144,10 +186,13 @@ class Lean4Kernel(Kernel):
                 return {'status': 'ok', 'output': output}
             else:
                 error_msg = result.stderr if result.stderr else result.stdout
-                return {'status': 'error', 'error': error_msg}
+                # 追加のデバッグ情報
+                debug_info = f"\n[Debug] Working directory: {self.mathlib_project_path}"
+                debug_info += f"\n[Debug] LEAN_PATH: {os.environ.get('LEAN_PATH', 'Not set')}"
+                return {'status': 'error', 'error': error_msg + debug_info}
                 
         except subprocess.TimeoutExpired:
-            return {'status': 'error', 'error': 'Execution timed out (60s limit)'}
+            return {'status': 'error', 'error': 'Execution timed out (90s limit)'}
         except Exception as e:
             return {'status': 'error', 'error': f'Mathlib execution error: {str(e)}'}
 

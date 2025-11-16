@@ -83,50 +83,83 @@ RUN chmod +x /home/$USERNAME/.local/share/jupyter/kernels/lean4/lean4_kernel.py
 # JupyterLabの拡張機能をインストール
 RUN jupyter labextension install @jupyter-widgets/jupyterlab-manager --no-build || echo "Extension installation failed, continuing..."
 
-# Mathlibプロジェクトのセットアップ (完全版 - Batteriesを含む)
+# Mathlib環境のセットアップ（手動作成方式）
 WORKDIR /home/$USERNAME
-RUN mkdir -p mathlib-project && cd mathlib-project && \
-    lake init mathlib-project
 
-# 正しいlakefile.leanを作成（Batteriesも含む）
+# 新しいプロジェクトを作成してMathlibを手動で設定
+RUN echo "Creating Mathlib project manually..." && \
+    lake new mathlib-project && \
+    cd mathlib-project
+
+# lakefile.leanを最もシンプルな形で作成
 RUN cd mathlib-project && \
+    echo "Setting up minimal lakefile.lean..." && \
     cat > lakefile.lean << 'EOF'
 import Lake
 open Lake DSL
 
 package «mathlib-project» where
-  -- add package configuration options here
 
-require batteries from git "https://github.com/leanprover-community/batteries" @ "v4.11.0"
-require mathlib from git "https://github.com/leanprover-community/mathlib4.git" @ "v4.11.0"
+require mathlib from git "https://github.com/leanprover-community/mathlib4.git"
 
 @[default_target]
 lean_lib «MathLibProject» where
-  -- add library configuration options here
 EOF
 
-# Mathlibとその依存関係をビルド
+# 段階的なセットアップ
 RUN cd mathlib-project && \
-    echo "Updating dependencies..." && \
-    timeout 1800 lake update && \
-    echo "Building Mathlib and Batteries (this may take 60+ minutes)..." && \
-    timeout 10800 lake build || echo "Build may have failed or timed out - checking partial build"
+    echo "Step 1: Update dependencies..." && \
+    timeout 1200 lake update || echo "Update completed or failed" && \
+    echo "Step 2: Try to get prebuilt cache..." && \
+    timeout 600 lake exe cache get || echo "Cache not available" && \
+    echo "Step 3: Basic build attempt..." && \
+    timeout 1800 lake build || echo "Build attempted"
 
-# ビルド状況の詳細チェック
+# ビルド状況の詳細確認
 RUN cd mathlib-project && \
-    echo "=== Lake manifest ===" && \
-    cat lake-manifest.json && \
-    echo "=== Package structure ===" && \
+    echo "=== Project structure ===" && \
+    ls -la && \
+    echo "=== Dependencies downloaded ===" && \
     ls -la .lake/packages/ && \
-    echo "=== Batteries check ===" && \
-    ls -la .lake/packages/batteries/ || echo "Batteries not found" && \
-    echo "=== Mathlib check ===" && \
-    ls -la .lake/packages/mathlib/ || echo "Mathlib not found" && \
-    echo "=== .olean files sample ===" && \
-    find .lake -name "*.olean" | head -20 || echo "No .olean files found"
+    echo "=== Mathlib package check ===" && \
+    if [ -d ".lake/packages/mathlib" ]; then \
+        echo "Mathlib package found"; \
+        ls -la .lake/packages/mathlib/.lake/build/lib/Mathlib/ | head -5 || echo "Lib directory not ready"; \
+    else \
+        echo "Mathlib package not found"; \
+    fi && \
+    echo "=== .olean files status ===" && \
+    OLEAN_COUNT=$(find .lake -name "*.olean" | wc -l) && \
+    echo "Found $OLEAN_COUNT .olean files" && \
+    find .lake -name "*.olean" | head -10
 
-# LEAN_PATH環境変数の設定 (Batteriesも含む)
-ENV LEAN_PATH="/home/$USERNAME/mathlib-project/.lake/packages/batteries/.lake/build/lib:/home/$USERNAME/mathlib-project/.lake/packages/mathlib/.lake/build/lib:/home/$USERNAME/mathlib-project/.lake/build/lib:$LEAN_PATH"
+# LEAN_PATH環境変数の動的설정
+RUN cd mathlib-project && \
+    echo "=== Setting up LEAN_PATH ===" && \
+    PROJECT_LIB="$PWD/.lake/build/lib" && \
+    MATHLIB_LIB="" && \
+    if [ -d ".lake/packages/mathlib/.lake/build/lib" ]; then \
+        MATHLIB_LIB=":$PWD/.lake/packages/mathlib/.lake/build/lib"; \
+    fi && \
+    EXTRA_LIBS=$(find .lake/packages -name lib -type d 2>/dev/null | grep -v mathlib | tr '\n' ':' | sed 's/:$//') && \
+    FULL_PATH="$PROJECT_LIB$MATHLIB_LIB" && \
+    if [ -n "$EXTRA_LIBS" ]; then \
+        FULL_PATH="$FULL_PATH:$EXTRA_LIBS"; \
+    fi && \
+    echo "Final LEAN_PATH: $FULL_PATH"
+
+# 基本的なLEAN_PATH設定（フォールバック）
+ENV LEAN_PATH="/home/$USERNAME/mathlib-project/.lake/build/lib:/home/$USERNAME/mathlib-project/.lake/packages/mathlib/.lake/build/lib"
+
+# 最終的な環境チェック
+RUN cd mathlib-project && \
+    echo "=== Final environment check ===" && \
+    echo "Lean version: $(lean --version)" && \
+    echo "Lake version: $(lake --version)" && \
+    echo "Project directory: $PWD" && \
+    echo "LEAN_PATH: $LEAN_PATH" && \
+    ls -la lakefile.lean && \
+    echo "=== Ready for Jupyter ===" || echo "Setup completed with warnings"
 
 # 作業ディレクトリの設定
 WORKDIR /workspace
