@@ -1,0 +1,87 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[japanese]{babel}
+\usepackage{CJKutf8}
+\usepackage{amsmath,amsfonts,amssymb,amsthm}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{tcolorbox}
+\usepackage{mdframed}
+
+% ページ設定
+\geometry{margin=2.5cm}
+\setlength{\headheight}{15pt}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Lean4 Mathematical Proofs}
+\fancyhead[R]{\thepage}
+
+% 色の定義
+\definecolor{leanblue}{RGB}{0,102,204}
+\definecolor{lightgray}{RGB}{248,248,248}
+
+% Lean4コードのスタイル設定
+\lstdefinestyle{lean}{
+  backgroundcolor=\color{lightgray},
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{leanblue}\bfseries,
+  commentstyle=\color{gray},
+  stringstyle=\color{red},
+  numberstyle=\tiny\color{gray},
+  numbers=left,
+  frame=single,
+  breaklines=true,
+  breakatwhitespace=true,
+  showspaces=false,
+  showstringspaces=false,
+  tabsize=2
+}
+
+% 定理環境の設定
+\theoremstyle{definition}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+
+% タイトル
+\title{Lean4 Mathematical Proofs\\
+       \large Formalized Mathematics Examples}
+\author{Lean4 Project}
+\date{\today}
+
+\begin{document}
+\begin{CJK}{UTF8}{min}
+\maketitle
+\tableofcontents
+\newpage
+
+
+\section{群論的証明のサンプル}
+
+このファイルには、PDF出力用の群論における証明の例が含まれています。
+基本的な群の定理を証明します。
+
+\subsection{目次}
+0. 群の定義
+1. 群の基本性質
+2. 部分群の性質
+3. 群準同型の性質
+4. 準同型定理
+
+
+
+
+
+
+
+
+
+
+
+
+\end{CJK}
+\end{document}
